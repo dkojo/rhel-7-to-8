@@ -9,13 +9,7 @@
   vars:
     repo: "{{ playbook_dir | dirname }}"
   tasks:
-    - name: Drain {{ host }} at the load balancer (no new requests reach it)
-      ansible.builtin.command: python3 {{ repo }}/scripts/haproxy.py "set server web/{{ host }} state maint"
-      changed_when: true
-
-    - name: Let in-flight requests finish
-      ansible.builtin.pause:
-        seconds: 2
+    # DEMO shortcut: no draining. HAProxy keeps sending users to the host while it's being replaced.
 
     - name: Retire the RHEL 7 host
       ansible.builtin.command: docker rm -f {{ host }}-el7
