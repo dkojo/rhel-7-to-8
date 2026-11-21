@@ -47,7 +47,7 @@
         echo "health=$(curl -s http://localhost/health)"
         echo "title=$(curl -s http://localhost/ | grep -o '<h1>[^<]*</h1>')"
         echo "server_header=$(curl -sI http://localhost/ | grep -i '^server:' | tr -d '\r')"
-        echo "portal_enabled=$(systemctl is-enabled portal)"
+        echo "portal_enabled=$(test -L /etc/systemd/system/multi-user.target.wants/portal.service && echo enabled || echo disabled)"
       register: before
       changed_when: false
 

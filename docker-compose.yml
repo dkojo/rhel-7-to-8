@@ -2,9 +2,6 @@
 # Each server is reachable on the network by its role name (web1, web2, web3); the RHEL 8 replacements take over those names.
 x-rhel7: &rhel7
   image: fleet/rhel7:local
-  privileged: true            # systemd as PID 1, like a real host
-  cgroup: host
-  volumes: ["/sys/fs/cgroup:/sys/fs/cgroup:rw"]
 
 services:
   haproxy:

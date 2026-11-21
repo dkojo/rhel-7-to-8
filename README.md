@@ -45,7 +45,7 @@ Only one host is ever out, so two of three are always serving.
 
 The orders portal (`app/portal.py`) ran on Python 2.7. RHEL 8 has no Python 2 by default, so the code was made to run on both, and the Chef recipe runs it on Python 3 on RHEL 8. The pre-upgrade check finds every service still on Python 2.
 
-The servers are Red Hat's own Universal Base Images, `ubi7-init` and `ubi8-init`, with systemd. So the RHEL 7 and RHEL 8 packages are genuine.
+The servers are Red Hat's own Universal Base Images, so the RHEL 7.9 and RHEL 8.10 packages are genuine. RHEL 8 hosts run systemd. RHEL 7's systemd (v219) can't run on today's cgroup v2 hosts, so in CI the RHEL 7 portal runs as the container's main process, with its unit file still installed and enabled.
 
 ## See a shortcut cause downtime
 
