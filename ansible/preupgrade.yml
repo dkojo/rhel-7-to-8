@@ -12,9 +12,14 @@
         fail_msg: "{{ inventory_hostname }} is on {{ ansible_distribution_version }}, update to 7.9 first"
         quiet: true
 
+    - name: Free space on /
+      ansible.builtin.shell: df -Pk / | awk 'NR==2 {print $4}'
+      register: free_kb
+      changed_when: false
+
     - name: At least 1 GB free on /
       ansible.builtin.assert:
-        that: (ansible_mounts | selectattr('mount', 'equalto', '/') | first).size_available > 1073741824
+        that: free_kb.stdout | int > 1048576
         quiet: true
 
     - name: Look for packages that don't exist in RHEL 8
