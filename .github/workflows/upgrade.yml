@@ -1,0 +1,77 @@
+name: upgrade
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build RHEL 7 and RHEL 8 server images
+        run: |
+          docker build -q -t fleet/rhel7:local -f images/rhel7/Dockerfile .
+          docker build -q -t fleet/rhel8:local images/rhel8
+
+      # Users start hitting the load balancer now and keep going until the very end
+      - name: Start the RHEL 7 fleet and its traffic
+        run: |
+          mkdir -p report
+          docker compose up -d
+          for i in $(seq 1 30); do [ "$(python3 scripts/haproxy.py status web3)" = UP ] && break; sleep 1; done
+          nohup python3 scripts/probe.py http://localhost:8080/ > probe.log 2>&1 &
+          sleep 2
+          curl -s localhost:8080/
+
+      - name: Install Ansible
+        run: |
+          pipx install ansible-core==2.16.20
+          ansible-galaxy collection install -r ansible/requirements.yml >/dev/null
+
+      - name: Pre-upgrade checks
+        working-directory: ansible
+        run: ansible-playbook preupgrade.yml
+
+      # One host at a time, so two of three are always serving
+      - name: Upgrade web1
+        working-directory: ansible
+        run: ansible-playbook upgrade.yml -e host=web1
+
+      - name: Upgrade web2
+        working-directory: ansible
+        run: ansible-playbook upgrade.yml -e host=web2
+
+      - name: Upgrade web3
+        working-directory: ansible
+        run: ansible-playbook upgrade.yml -e host=web3
+
+      - name: Validate the RHEL 8 fleet
+        working-directory: ansible
+        run: ansible-playbook validate.yml
+
+      - name: Zero-downtime check
+        run: |
+          pkill -TERM -f scripts/probe.py; sleep 2
+          python3 - <<'PY'
+          import json, sys
+          p = json.load(open("report/probe.json"))
+          print(f"{p['requests']} requests during the upgrade: {p['by_release']['7']} served by RHEL 7, {p['by_release']['8']} by RHEL 8, {p['failed']} failed")
+          print("RHEL 8 share over time (%):", " ".join(map(str, p["rhel8_share_pct"])))
+          for e in p["errors"][:5]:
+              print("  error:", e)
+          sys.exit(0 if p["failed"] == 0 else 1)
+          PY
+
+      - name: Show the fleet on failure
+        if: failure()
+        run: |
+          docker ps -a; python3 scripts/haproxy.py "show stat" | cut -d, -f1,2,18 || true
+          cat probe.log || true

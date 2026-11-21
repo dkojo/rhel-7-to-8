@@ -1,0 +1,32 @@
+# The fleet before the upgrade: three RHEL 7.9 web servers behind HAProxy.
+# Each server is reachable on the network by its role name (web1, web2, web3); the RHEL 8 replacements take over those names.
+x-rhel7: &rhel7
+  image: fleet/rhel7:local
+  privileged: true            # systemd as PID 1, like a real host
+  cgroup: host
+  volumes: ["/sys/fs/cgroup:/sys/fs/cgroup:rw"]
+
+services:
+  haproxy:
+    image: haproxy:3.0.31-alpine
+    volumes: ["./haproxy:/usr/local/etc/haproxy:ro"]
+    ports: ["8080:80", "9999:9999"]
+  web1-el7:
+    <<: *rhel7
+    container_name: web1-el7
+    hostname: web1
+    networks: { default: { aliases: [web1] } }
+  web2-el7:
+    <<: *rhel7
+    container_name: web2-el7
+    hostname: web2
+    networks: { default: { aliases: [web2] } }
+  web3-el7:
+    <<: *rhel7
+    container_name: web3-el7
+    hostname: web3
+    networks: { default: { aliases: [web3] } }
+
+networks:
+  default:
+    name: fleet

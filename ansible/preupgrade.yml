@@ -1,0 +1,58 @@
+# Before touching anything: is every RHEL 7 host ready to move, and what does "working" look like today?
+# These are the same kinds of checks Red Hat's Leapp pre-upgrade report makes.
+- name: Pre-upgrade checks
+  hosts: rhel7
+  gather_facts: true
+  vars:
+    removed_in_rhel8: [ntp, python-virtualenv, system-config-firewall, tftp-server]
+  tasks:
+    - name: On the latest RHEL 7 minor release (required before upgrading)
+      ansible.builtin.assert:
+        that: ansible_distribution_version == '7.9'
+        fail_msg: "{{ inventory_hostname }} is on {{ ansible_distribution_version }}, update to 7.9 first"
+        quiet: true
+
+    - name: At least 1 GB free on /
+      ansible.builtin.assert:
+        that: (ansible_mounts | selectattr('mount', 'equalto', '/') | first).size_available > 1073741824
+        quiet: true
+
+    - name: Look for packages that don't exist in RHEL 8
+      ansible.builtin.shell: "rpm -q {{ removed_in_rhel8 | join(' ') }} | grep -v 'not installed' || true"
+      register: removed
+      changed_when: false
+
+    - name: No upgrade inhibitors
+      ansible.builtin.assert:
+        that: removed.stdout | length == 0
+        fail_msg: "Inhibitors on {{ inventory_hostname }}: {{ removed.stdout_lines }}"
+        quiet: true
+
+    - name: Find services that run on Python 2 (RHEL 8 has no Python 2 by default)
+      ansible.builtin.shell: grep -l 'python2' /etc/systemd/system/*.service | xargs -n1 basename || true
+      register: py2
+      changed_when: false
+
+    - name: Report what the upgrade has to change
+      ansible.builtin.debug:
+        msg: "Needs Python 3 on RHEL 8: {{ py2.stdout_lines | join(', ') or 'nothing' }} (handled by the Chef webapp recipe)"
+
+    - name: Record how the host behaves today
+      ansible.builtin.shell: |
+        echo "health=$(curl -s http://localhost/health)"
+        echo "title=$(curl -s http://localhost/ | grep -o '<h1>[^<]*</h1>')"
+        echo "server_header=$(curl -sI http://localhost/ | grep -i '^server:' | tr -d '\r')"
+        echo "portal_enabled=$(systemctl is-enabled portal)"
+      register: before
+      changed_when: false
+
+    - name: Save it for the comparison after the upgrade
+      ansible.builtin.copy:
+        dest: "{{ playbook_dir }}/../report/before-{{ inventory_hostname | regex_replace('-el7$', '') }}.txt"
+        content: "{{ before.stdout }}\n"
+        mode: "0644"
+      delegate_to: localhost
+
+    - name: Ready
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: RHEL {{ ansible_distribution_version }}, 0 inhibitors, ready to upgrade"

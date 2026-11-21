@@ -1,0 +1,28 @@
+# After the upgrade: every host is on RHEL 8 and behaves exactly as it did on RHEL 7.
+- name: Validate the RHEL 8 fleet
+  hosts: rhel8
+  gather_facts: true
+  tasks:
+    - name: Running RHEL 8
+      ansible.builtin.assert:
+        that: ansible_distribution_major_version == '8'
+        quiet: true
+
+    - name: Record how the host behaves now
+      ansible.builtin.shell: |
+        echo "health=$(curl -s http://localhost/health)"
+        echo "title=$(curl -s http://localhost/ | grep -o '<h1>[^<]*</h1>')"
+        echo "server_header=$(curl -sI http://localhost/ | grep -i '^server:' | tr -d '\r')"
+        echo "portal_enabled=$(systemctl is-enabled portal)"
+      register: after
+      changed_when: false
+
+    - name: Same behaviour as before the upgrade
+      ansible.builtin.assert:
+        that: after.stdout + '\n' == lookup('file', playbook_dir + '/../report/before-' + (inventory_hostname | regex_replace('-el8$', '')) + '.txt') + '\n'
+        fail_msg: "{{ inventory_hostname }} differs from its RHEL 7 self"
+        quiet: true
+
+    - name: Validated
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: RHEL {{ ansible_distribution_version }}, portal {{ after.stdout_lines[3] | regex_replace('portal_enabled=', '') }}, behaves exactly as on RHEL 7"

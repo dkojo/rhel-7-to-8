@@ -1,0 +1,66 @@
+# Replace one RHEL 7 host with a RHEL 8 host, without users noticing:
+#   ansible-playbook upgrade.yml -e host=web1
+# Drain it at the load balancer, retire it, start RHEL 8 under the same name, configure it with Chef,
+# check it directly, and only then let traffic back in.
+- name: Rolling upgrade of {{ host }}
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    repo: "{{ playbook_dir | dirname }}"
+  tasks:
+    - name: Drain {{ host }} at the load balancer (no new requests reach it)
+      ansible.builtin.command: python3 {{ repo }}/scripts/haproxy.py "set server web/{{ host }} state maint"
+      changed_when: true
+
+    - name: Let in-flight requests finish
+      ansible.builtin.pause:
+        seconds: 2
+
+    - name: Retire the RHEL 7 host
+      ansible.builtin.command: docker rm -f {{ host }}-el7
+      changed_when: true
+
+    - name: Start a RHEL 8 host under the same name
+      ansible.builtin.command: >
+        docker run -d --name {{ host }}-el8 --hostname {{ host }} --network fleet --network-alias {{ host }}
+        --privileged --cgroupns=host -v /sys/fs/cgroup:/sys/fs/cgroup:rw -v {{ repo }}/chef:/chef:ro fleet/rhel8:local
+      changed_when: true
+
+    - name: Wait for it to boot
+      ansible.builtin.command: docker exec {{ host }}-el8 systemctl is-system-running
+      register: boot
+      until: boot.stdout in ['running', 'degraded']
+      retries: 30
+      delay: 1
+      failed_when: false
+      changed_when: false
+
+    - name: Configure it with Chef (the webapp cookbook)
+      ansible.builtin.command: >
+        docker exec -w /tmp {{ host }}-el8 cinc-client -z -N {{ host }} -o webapp --chef-license accept-silent
+        --config-option chef_repo_path=/tmp/chef --config-option cookbook_path=/chef/cookbooks
+      register: chef
+      changed_when: "'resources updated' in chef.stdout"
+
+    - name: Check it directly before it takes any traffic
+      ansible.builtin.shell: |
+        docker exec {{ host }}-el8 grep -q "release 8" /etc/redhat-release
+        docker exec {{ host }}-el8 curl -sf http://localhost/health
+      changed_when: false
+
+    - name: Put {{ host }} back in the pool
+      ansible.builtin.command: python3 {{ repo }}/scripts/haproxy.py "set server web/{{ host }} state ready"
+      changed_when: true
+
+    - name: Wait until the load balancer's health checks pass
+      ansible.builtin.command: python3 {{ repo }}/scripts/haproxy.py status {{ host }}
+      register: lb
+      until: lb.stdout == 'UP'
+      retries: 30
+      delay: 1
+      changed_when: false
+
+    - name: Done
+      ansible.builtin.debug:
+        msg: "{{ host }} is now on RHEL 8 ({{ chef.stdout_lines | select('search', 'resources updated') | first | default('Chef run complete') | trim }}) and back in the pool"
