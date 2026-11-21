@@ -33,7 +33,9 @@ jobs:
 
       - name: Install Ansible
         run: |
-          pipx install ansible-core==2.16.20
+          # 2.16 is the last ansible-core that can manage Python 2.7 hosts like RHEL 7 (the runner ships a newer one)
+          pipx install --force ansible-core==2.16.20
+          ansible --version | head -1
           ansible-galaxy collection install -r ansible/requirements.yml >/dev/null
 
       - name: Pre-upgrade checks
