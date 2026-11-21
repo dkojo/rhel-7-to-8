@@ -31,12 +31,19 @@ jobs:
           sleep 2
           curl -s localhost:8080/
 
+      # ansible-core 2.16 is the last release that can manage Python 2.7 hosts like RHEL 7, and it needs Python 3.10 to 3.12
+      - name: Set up Python 3.12
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
       - name: Install Ansible
         run: |
-          # 2.16 is the last ansible-core that can manage Python 2.7 hosts like RHEL 7 (the runner ships a newer one)
-          pipx install --force ansible-core==2.16.20
-          ansible --version | head -1
-          ansible-galaxy collection install -r ansible/requirements.yml >/dev/null
+          python -m venv ~/ansible216
+          ~/ansible216/bin/pip install -q ansible-core==2.16.20
+          echo "$HOME/ansible216/bin" >> "$GITHUB_PATH"
+          ~/ansible216/bin/ansible --version | head -1
+          ~/ansible216/bin/ansible-galaxy collection install -r ansible/requirements.yml >/dev/null
 
       - name: Pre-upgrade checks
         working-directory: ansible
