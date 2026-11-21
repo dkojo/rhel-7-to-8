@@ -18,9 +18,11 @@
       changed_when: false
 
     - name: Same behaviour as before the upgrade
+      vars:
+        before: "{{ lookup('file', playbook_dir + '/../report/before-' + (inventory_hostname | regex_replace('-el8$', '')) + '.txt') }}"
       ansible.builtin.assert:
-        that: after.stdout + '\n' == lookup('file', playbook_dir + '/../report/before-' + (inventory_hostname | regex_replace('-el8$', '')) + '.txt') + '\n'
-        fail_msg: "{{ inventory_hostname }} differs from its RHEL 7 self"
+        that: after.stdout | trim == before | trim
+        fail_msg: "{{ inventory_hostname }} differs from its RHEL 7 self. Before: {{ before.splitlines() }} After: {{ after.stdout_lines }}"
         quiet: true
 
     - name: Validated
